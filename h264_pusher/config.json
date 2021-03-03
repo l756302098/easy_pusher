@@ -1,0 +1,22 @@
+{
+    "streams": {
+	    "station_visible": {
+            "rtsp_ip":"127.0.0.1",
+            "rtsp_port":554,
+            "rtsp_name":"ydbj/1/visible/live",
+            "ws_ip":"192.168.1.136",
+            "core_ip":"192.168.1.11",
+            "ws_port":9090,
+            "topic":"/yida/visible_sub/image_proc"
+        },
+       	"station_infrared": {
+            "rtsp_ip":"127.0.0.1",
+            "rtsp_port":554,
+            "rtsp_name":"ydbj/1/infrared/live",
+            "ws_ip":"192.168.1.136",
+            "core_ip":"192.168.1.11",
+            "ws_port":9090,
+            "topic":"/yida/infrared/image_proc"
+        }
+    }
+}
