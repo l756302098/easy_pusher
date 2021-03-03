@@ -30,3 +30,12 @@
 *.exe
 *.out
 *.app
+
+# Compiled build dir
+*build*
+depends
+tags
+release*
+
+# vscode
+.vscode
