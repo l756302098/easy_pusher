@@ -4,7 +4,7 @@
  * @Author: li
  * @Date: 2021-02-26 13:03:27
  * @LastEditors: li
- * @LastEditTime: 2021-03-03 18:41:08
+ * @LastEditTime: 2021-03-05 10:25:34
  */
 #include <iostream>
 #include <csignal>
@@ -162,7 +162,7 @@ int main(int argc, char **argv)
         for (size_t i = 0; i < len; i++)
         {
             StreamNode &node = nodes[i];
-            auto client = std::make_shared<easy_client>(node.ws_ip, node.ws_port,node.topic);
+            auto client = std::make_shared<easy_client>(node.ws_ip,node.core_ip, node.ws_port,node.topic);
             client->config_ip = node.rtsp_ip;
             client->config_port = node.rtsp_port;
             client->config_name = node.rtsp_name;

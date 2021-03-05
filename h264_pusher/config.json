@@ -1,6 +1,6 @@
 {
     "streams": {
-	    "station_visible": {
+	    "station_visible1": {
             "rtsp_ip":"127.0.0.1",
             "rtsp_port":554,
             "rtsp_name":"ydbj/1/visible/live",
@@ -9,7 +9,7 @@
             "ws_port":9090,
             "topic":"/yida/visible_sub/image_proc"
         },
-       	"station_infrared": {
+        "station_visible2": {
             "rtsp_ip":"127.0.0.1",
             "rtsp_port":554,
             "rtsp_name":"ydbj/1/infrared/live",

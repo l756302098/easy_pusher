@@ -4,7 +4,7 @@
  * @Author: li
  * @Date: 2021-03-02 11:32:41
  * @LastEditors: li
- * @LastEditTime: 2021-03-03 15:05:55
+ * @LastEditTime: 2021-03-05 10:26:01
  */
 #ifndef EASY_CLIENT_HPP
 #define EASY_CLIENT_HPP
@@ -17,6 +17,7 @@
 #include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
 #include "base64.hpp"
+#include "nalu.hpp"
 
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_io.hpp>
@@ -41,7 +42,7 @@ class easy_client
 {
 public:
     PushFun push_fun;
-    easy_client(const std::string &addr,int port,const std::string &topic);
+    easy_client(const std::string &addr,const std::string &core_addr,int port,const std::string &topic);
     easy_client(){};
     ~easy_client();
     void process();
@@ -49,7 +50,6 @@ public:
     void dealMsg(std::string &msg);
 
     void pusher(std::vector<char> &data);
-    void setRtsp(std::string url,int width=1920,int height=1080);
     void openRtsp();
     void stop();
     void runOnce();
@@ -77,17 +77,14 @@ protected:
     std::mutex _actionLock;  
     std::condition_variable _actionCondition;
 
-    bool _firstFrame;
-    std::string _rtspUrl,_uuid;
-    int _width,_height;
-
     Easy_Handle	fPusherHandle = 0;
     EASY_MEDIA_INFO_T mediainfo;
+    bool init_nal;
     unsigned char btHeader[4] = {0x00,0x00,0x00,0x01};
     unsigned char bpHeader[4] = {0x00,0x00,0x01};
 
     std::string _topic,_clientName,_subInfo;
-    std::string _addr;
+    std::string _addr,_core_addr;
     int _port,_seq;
 public:
     std::string config_ip,config_name;

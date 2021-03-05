@@ -4,7 +4,7 @@
  * @Author: li
  * @Date: 2021-03-02 11:35:55
  * @LastEditors: li
- * @LastEditTime: 2021-03-03 15:35:08
+ * @LastEditTime: 2021-03-05 10:31:10
  */
 #include "easy_client.hpp"
 #include <thread>
@@ -12,15 +12,15 @@
 using websocketpp::lib::placeholders::_1;
 using websocketpp::lib::placeholders::_2;
 
-easy_client::easy_client(const std::string &addr,int port,const std::string &topic):messageCount(0),isNewConnect(false),_clientStatus(ConnectState::Close)
+easy_client::easy_client(const std::string &addr,const std::string &core_addr,int port,const std::string &topic):messageCount(0),isNewConnect(false),init_nal(false),_clientStatus(ConnectState::Close)
 {
     _addr =addr;
     _port = port;
     _topic = topic;
-    
+    _core_addr = core_addr;
     boost::uuids::uuid a_uuid = boost::uuids::random_generator()();
-    _uuid = boost::uuids::to_string(a_uuid);
-    registerTopic(topic,_uuid);
+    std::string uuid = boost::uuids::to_string(a_uuid);
+    registerTopic(topic,uuid);
 
     _wsUrl = "ws://"+addr+":"+std::to_string(port);
     std::cout << "open url " << _wsUrl << std::endl;
@@ -143,6 +143,64 @@ void easy_client::dealMsg(std::string &msg)
             }
         }
         */
+        if(!init_nal && v["encoding"].IsString()){
+            std::string base64_str = v["encoding"].GetString();
+            std::cout << "base64:" << base64_str << " size:" << sizeof(base64_str) << std::endl;
+            if(base64_str.size()<16){
+                std::cout << base64_str << " not base64" << std::endl;
+                return;
+            }
+            std::string result = rtsptool::base64_decode(base64_str);
+            uint8_t *vdata = (uint8_t *)result.c_str();            
+            printf("\n size:%d string.size:%d",sizeof(result),result.size());
+            std::vector<uint8_t> sps;
+	        std::vector<uint8_t> pps;
+            std::cout << "size:" << sizeof(vdata) << " len:" << result.size() << std::endl;
+	        rtsptool::get_sps_pps_nalu(vdata,result.size(),sps,pps);
+	        printf("sps: \n");
+	        for (size_t i = 0; i < sps.size(); i++)
+	        {
+		        printf("%x ",sps[i]);
+	        }
+	        printf("\n");
+	        printf("pps: \n");
+	        for (size_t i = 0; i < pps.size(); i++)
+	        {
+		        printf("%x ",pps[i]);
+	        }
+	        printf("\n");
+            
+            memset(&mediainfo, 0x00, sizeof(EASY_MEDIA_INFO_T));
+            mediainfo.u32VideoCodec =   EASY_SDK_VIDEO_CODEC_H264;
+	        mediainfo.u32VideoFps = 25;
+            mediainfo.u32SpsLength = sps.size();
+	        mediainfo.u32PpsLength = pps.size();
+	        memcpy(mediainfo.u8Sps, &(sps[0]), mediainfo.u32SpsLength);
+	        memcpy(mediainfo.u8Pps, &(pps[0]), mediainfo.u32PpsLength);
+            init_nal = true;
+        }
+        if(init_nal && fPusherHandle==0){
+            fPusherHandle = EasyPusher_Create();
+            auto f = [](int _id, EASY_PUSH_STATE_T _state, EASY_AV_Frame *_frame, void *_userptr)->int{
+            
+                if (_state == EASY_PUSH_STATE_CONNECTING) printf("Connecting...\n");
+                else if (_state == EASY_PUSH_STATE_CONNECTED)           printf("Connected\n");
+                else if (_state == EASY_PUSH_STATE_CONNECT_FAILED)      printf("Connect failed\n");
+                else if (_state == EASY_PUSH_STATE_CONNECT_ABORT)       printf("Connect abort\n");
+	            else if (_state == EASY_PUSH_STATE_PUSHING)             printf("Pushing to rtsp\n");
+                else if (_state == EASY_PUSH_STATE_DISCONNECTED)        printf("Disconnect.\n");
+            
+                return 0;
+            };
+            int(*cb)(int _id, EASY_PUSH_STATE_T _state, EASY_AV_Frame *_frame, void *_userptr) = f; 
+            EasyPusher_SetEventCallback(fPusherHandle, cb, 0, NULL);
+            EasyPusher_StartStream(fPusherHandle, const_cast<char*>(config_ip.c_str()), config_port, const_cast<char*>(config_name.c_str()), EASY_RTP_OVER_TCP, "admin", "admin", &mediainfo, 1024, false);
+            printf("*** live streaming url:rtsp://%s:%d/%s ***\n", config_ip.c_str(), config_port, config_name.c_str());
+        }
+        if(fPusherHandle==0){
+            std::cout << "fPusherHandle = 0" << std::endl;
+            return;
+        }
         if (v["data"].IsString())
         {
             std::string value = v["data"].GetString();
@@ -151,9 +209,7 @@ void easy_client::dealMsg(std::string &msg)
             int count = decodeData.size();
             std::vector<char> rdata;
             rdata.insert(rdata.end(), vdata, vdata + count);
-            if(fPusherHandle!=0){
-                pusher(rdata);
-            }
+            pusher(rdata);
         }
     }
     catch (const std::exception &e)
@@ -165,7 +221,6 @@ void easy_client::dealMsg(std::string &msg)
 void easy_client::stop()
 {
     _isProcessing = false;
-    _firstFrame = false;
     _easy_client.stop_perpetual();
     websocketpp::lib::error_code ec;
     _easy_client.close(_ppConnection, websocketpp::close::status::going_away, "", ec);
@@ -183,7 +238,7 @@ void easy_client::runOnce()
     else{
         if(isNewConnect){
             std::cout << "runOnce:again get new message " << std::endl;
-            openRtsp();
+            //openRtsp();
             isNewConnect = false;
         }
         std::cout << "runOnce:topic "<< _topic << std::endl;
@@ -199,7 +254,7 @@ void easy_client::runOnce()
 void easy_client::registerTopic(const std::string &topic,const std::string &id, const std::string& type, int throttle_rate, int queue_length)
 {
     //Assembly data
-    std::string message = "\"op\":\"subscribe\", \"topic\":\"" + topic + "\",\"ip\":\"192.168.1.11\"";
+    std::string message = "\"op\":\"subscribe\", \"topic\":\"" + topic + "\",\"ip\":\""+ _core_addr +"\"";
     if (id.compare("") != 0)
     {
         message += ", \"id\":\"" + id + "\"";
@@ -223,47 +278,10 @@ void easy_client::registerTopic(const std::string &topic,const std::string &id, 
 
 void easy_client::openRtsp()
 {
-    if(fPusherHandle==0){
-        //init sps pps
-        uint8_t sps[] = {0x67,0x4d,0x0,0x1f,0x8d,0x8d,0x40,0x28,0x2,0xdd,0x8,0x0,0x0,0x38,0x40,0x0,0xa,0xfc,0x80,0x20};
-        uint8_t pps[] = {0x68,0xee,0x38,0x80};
-        //init pusher
-        memset(&mediainfo, 0x00, sizeof(EASY_MEDIA_INFO_T));
-        mediainfo.u32VideoCodec =   EASY_SDK_VIDEO_CODEC_H264;
-	    mediainfo.u32VideoFps = 25;
-        mediainfo.u32SpsLength = std::end(sps)-std::begin(sps);
-	    mediainfo.u32PpsLength = std::end(pps)-std::begin(pps);
-	    memcpy(mediainfo.u8Sps, sps, mediainfo.u32SpsLength);
-	    memcpy(mediainfo.u8Pps, pps, mediainfo.u32PpsLength);
-        fPusherHandle = EasyPusher_Create();
-        auto f = [](int _id, EASY_PUSH_STATE_T _state, EASY_AV_Frame *_frame, void *_userptr)->int{
-            
-            if (_state == EASY_PUSH_STATE_CONNECTING) printf("Connecting...\n");
-            else if (_state == EASY_PUSH_STATE_CONNECTED)           printf("Connected\n");
-            else if (_state == EASY_PUSH_STATE_CONNECT_FAILED)      printf("Connect failed\n");
-            else if (_state == EASY_PUSH_STATE_CONNECT_ABORT)       printf("Connect abort\n");
-	        else if (_state == EASY_PUSH_STATE_PUSHING)             printf("Pushing to rtsp");
-            else if (_state == EASY_PUSH_STATE_DISCONNECTED)        printf("Disconnect.\n");
-            
-            return 0;
-        };
-        int(*cb)(int _id, EASY_PUSH_STATE_T _state, EASY_AV_Frame *_frame, void *_userptr) = f; 
-        EasyPusher_SetEventCallback(fPusherHandle, cb, 0, NULL);
-        EasyPusher_StartStream(fPusherHandle, const_cast<char*>(config_ip.c_str()), config_port, const_cast<char*>(config_name.c_str()), EASY_RTP_OVER_TCP, "admin", "admin", &mediainfo, 1024, false);
-        printf("*** live streaming url:rtsp://%s:%d/%s ***\n", config_ip.c_str(), config_port, config_name.c_str());
-    }
-}
-
-void easy_client::setRtsp(std::string url, int width, int height)
-{
-    _rtspUrl = url;
-    _width = width;
-    _height = height;
 }
 
 void easy_client::pusher(std::vector<char> &data){
     if(fPusherHandle!=0){
-        std::cout << "ready pusher ..." << std::endl;
         if(data.size()>5)
 		{
             bool bKeyFrame = false;
@@ -271,10 +289,10 @@ void easy_client::pusher(std::vector<char> &data){
             if (naltype==0x07 || naltype==0x05) bKeyFrame = true;
             struct timeval time;
             gettimeofday(&time, NULL);
-            printf("s: %ld, ms: %ld\n", time.tv_sec, (time.tv_sec*1000 + time.tv_usec/1000));
+            //printf("s: %ld, ms: %ld\n", time.tv_sec, (time.tv_sec*1000 + time.tv_usec/1000));
             if (bKeyFrame)//I֡
 			{
-                std::cout << "is I frame " << std::endl;
+                //std::cout << "is I frame " << std::endl;
                 int prefix_size = mediainfo.u32PpsLength + mediainfo.u32SpsLength + 8;
                 int result_size = data.size() + prefix_size;
                 unsigned char *ptr = new unsigned char [result_size];
@@ -295,7 +313,7 @@ void easy_client::pusher(std::vector<char> &data){
 			    avFrame.u32TimestampUsec = time.tv_usec;
 			    EasyPusher_PushFrame(fPusherHandle, &avFrame);
 			}else{
-                std::cout << "is P/B frame " << std::endl;
+                //std::cout << "is P/B frame " << std::endl;
                 int prefix_size = 3;
                 int result_size = data.size() + prefix_size;
                 unsigned char *ptr = new unsigned char [result_size];
