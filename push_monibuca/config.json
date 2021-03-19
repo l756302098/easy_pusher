@@ -1,0 +1,14 @@
+{
+    "streams": {
+	    "station_visible1": {
+            "rtsp_ip":"127.0.0.1",
+            "rtsp_port":554,
+            "rtsp_app":"ydbj/1",
+            "rtsp_stream":"1/visible/live",
+            "ws_ip":"192.168.1.115",
+            "core_ip":"192.168.1.11",
+            "ws_port":9090,
+            "topic":"/hk/rtsp/visible/240"
+        }
+    }
+}
